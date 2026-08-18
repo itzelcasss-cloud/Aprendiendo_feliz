@@ -1,11 +1,6 @@
 library(GEOquery)
 library(tidyverse)
 
-annot <- getGEO("GPL6244", AnnotGPL = TRUE)
-
-Table(annot) |> 
-  select("Gene symbol", ID)
-
 File1 <- getGEO("GSE137765", GSEMatrix = TRUE)
 
 pheno_gse13776 <- pData(File1[[1]])
