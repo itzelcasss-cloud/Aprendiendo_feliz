@@ -1,80 +1,167 @@
+#Resultados de Tesis de Montserrat Ramirez 
+
 library(limma)
+library(GEOquery)
+library(tidyverse)
 
-File1 <- getGEO("GSE137765", GSEMatrix = TRUE)
-pheno_gse13776 <- pData(File1[[1]])
-conteo <- exprs((File1[[1]]))
+#GSE137765 - Diferencias en la expresión génica en sujetos bajo ningún tratamiento vs. tratamiento oral con Levonorgestrel
+gse_137765 <- getGEO("GSE137765", GSEMatrix = TRUE)
+pheno_gse_137765 <- pData(gse_137765[[1]])
+conteo_gse_137765 <- exprs((gse_137765[[1]]))
 
-metadata_ed_gse13776 <- pheno_gse13776 |> 
-  select(geo_accession, `tissue:ch1`) |> 
-  mutate(`tissue:ch1`= factor(`tissue:ch1`))
-
-metadata_ed_gse13776$`tissue:ch1` <- relevel(metadata_ed_gse13776$`tissue:ch1`, ref = "cervical biopsy")
-
-design <- model.matrix(~ 0 + metadata_ed_gse13776$`tissue:ch1`)
-design
-
-#asegurarse de que todos los nombres esten en el mismo orden
-conteo <- conteo[, metadata_ed_gse13776$geo_accession]
-all(colnames(conteo) == metadata_ed_gse13776$geo_accession)
+#TEJIDO CERVICAL
+md_pheno_gse137765 <- pheno_gse_137765 |> 
+  select( c(geo_accession,
+            `contraceptive used:ch1`,
+             `age:ch1`,
+            characteristics_ch1.3)) |> 
+  rename(contraceptive = `contraceptive used:ch1`, 
+         age = `age:ch1`) |> 
+  filter(characteristics_ch1.3 == "tissue: cervical biopsy",
+         !(contraceptive == "LNG-IUD"| contraceptive =="cu-IUD"))
 
 
-fit <- lmFit(conteo, design)
-fit
+md_pheno_gse137765 <- md_pheno_gse137765 |> 
+  mutate(contraceptive = factor(contraceptive))
 
-#asegurarse que los nombres de las columnas sean válidos
-colnames(design) <- make.names(colnames(design))
+md_pheno_gse137765$contraceptive <- relevel(md_pheno_gse137765$contraceptive, ref = "control")
 
-contraste <- makeContrasts(
-  metadata_ed_gse13776..tissue.ch1.cervical.biopsy - metadata_ed_gse13776..tissue.ch1.endometrial.biopsy,
-  levels = design)
+design_gse137765 <- model.matrix(~ 0 + md_pheno_gse137765$contraceptive)
+design_gse137765
 
-fit2 <- contrasts.fit(fit, contraste)
-fit2 <- eBayes(fit2)
+conteo_gse_137765 <- conteo_gse_137765[, md_pheno_gse137765$geo_accession]
+all(colnames(conteo_gse_137765) == md_pheno_gse137765$geo_accession)
 
-#resultados
-resultados <- topTable(
-  fit2, 
+colnames(design_gse137765) <- make.names(colnames(design_gse137765))
+
+fit_gse137765 <- lmFit(conteo_gse_137765, design_gse137765)
+
+
+contraste_gse13776 <- makeContrasts(
+  md_pheno_gse137765.contraceptivecontrol - md_pheno_gse137765.contraceptiveCOC,
+  levels = design_gse137765)
+
+fit2_gse137765 <- contrasts.fit(fit_gse137765, contraste_gse13776)
+fit2_gse137765 <- eBayes(fit2_gse137765)
+
+#resultados 
+resultados_gse137765 <- topTable(
+  fit2_gse137765,
   coef = 1,
   number = Inf,
-  adjust.method = "BH")
-
-#seleccionar genes diferencialmente expresados
-DEG <- resultados[
-  resultados$adj.P.Val <0.001 &
-    abs(resultados$logFC) >=2.5,]
-DEG
-
-library(AnnotationDbi)
-library(hugene10sttranscriptcluster.db)
-
-#para saber el nombre de los genes 
-mapIds(
-  hugene10sttranscriptcluster.db,
-  keys = rownames(DEG),
-  keytype = "PROBEID",
-  column = "SYMBOL",
-  multiVals = "first"
+  adjust.method = "BH"
 )
 
-#agregar una columna que tenga el nombre del gen
-DEG$symbol <- mapIds(
-  hugene10sttranscriptcluster.db,
-  keys = rownames(DEG),
-  keytype = "PROBEID",
-  column = "SYMBOL",
-  multiVals = "first"
+#genes diferencilmente expresados 
+deg_gse137765 <- resultados_gse137765[
+  resultados_gse137765$adj.P.Val <0.05 &
+    abs(resultados_gse137765$logFC) >=2.5,]
+
+resultados_gse137765$significativo <- "No significativo"
+
+resultados_gse137765$significativo[
+  resultados_gse137765$adj.P.Val < 0.05 &
+    resultados_gse137765$logFC >= 1
+] <- "Sobreexpresado"
+
+resultados_gse137765$significativo[
+  resultados_gse137765$adj.P.Val < 0.05 &
+    resultados_gse137765$logFC <= -1
+] <- "Subexpresado"
+
+ggplot(resultados_gse137765, aes(
+  x = logFC,
+  y = -log10(adj.P.Val),
+  color = significativo
+)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  geom_vline(xintercept = c(-1, 1),
+             linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  labs(
+    title = "Volcano Plot",
+    x = "log2 Fold Change",
+    y = "-log10(FDR)",
+    color = "Clasificación"
+  ) +
+  theme_minimal()
+
+#TEJIDO ENDOMETRIAL
+conteo_gse_137765_endometrial <- exprs((gse_137765[[1]]))
+
+md_pheno_gse137765_endometrial <- pheno_gse_137765 |> 
+  select( c(geo_accession,
+            `contraceptive used:ch1`,
+            `age:ch1`,
+            characteristics_ch1.3)) |> 
+  rename(contraceptive = `contraceptive used:ch1`, 
+         age = `age:ch1`) |> 
+  filter(characteristics_ch1.3 == "tissue: endometrial biopsy",
+         !(contraceptive == "LNG-IUD"| contraceptive =="cu-IUD"))
+
+
+md_pheno_gse137765_endometrial <- md_pheno_gse137765_endometrial |> 
+  mutate(contraceptive = factor(contraceptive))
+
+md_pheno_gse137765_endometrial$contraceptive <- relevel(md_pheno_gse137765_endometrial$contraceptive, ref = "control")
+
+design_gse137765_endometrial <- model.matrix(~ 0 + md_pheno_gse137765_endometrial$contraceptive)
+
+conteo_gse_137765_endometrial <- conteo_gse_137765_endometrial[, md_pheno_gse137765_endometrial$geo_accession]
+all(colnames(conteo_gse_137765_endometrial) == md_pheno_gse137765_endometrial$geo_accession)
+
+colnames(design_gse137765_endometrial) <- make.names(colnames(design_gse137765_endometrial))
+
+fit_gse137765_endometrial <- lmFit(conteo_gse_137765_endometrial, design_gse137765_endometrial)
+
+
+contraste_gse13776_endometrial <- makeContrasts(
+  md_pheno_gse137765_endometrial.contraceptivecontrol - md_pheno_gse137765_endometrial.contraceptiveCOC,
+  levels = design_gse137765_endometrial)
+
+fit2_gse137765_endometrial <- contrasts.fit(fit_gse137765_endometrial, contraste_gse13776_endometrial)
+fit2_gse137765_endometrial <- eBayes(fit2_gse137765_endometrial)
+
+#resultados 
+resultados_gse137765_endometrial <- topTable(
+  fit2_gse137765_endometrial,
+  coef = 1,
+  number = Inf,
+  adjust.method = "BH"
 )
 
-#ver los nombres de los genes SI HAY repertorio de GEO
-annot <- getGEO("GPL6244", AnnotGPL = TRUE)
-gpl <- Table(annot) |> 
-  select("Gene symbol", ID)
+#genes diferencilmente expresados 
+deg_gse137765_endometrial <- resultados_gse137765_endometrial[
+  resultados_gse137765_endometrial$adj.P.Val <0.05 &
+    abs(resultados_gse137765_endometrial$logFC) >=2.5,]
 
-#juntar los nombres de los genes (del repertorio que nos da GEO) con los que encontramos que estan diferenciados
-gpl[gpl$ID %in% rownames(DEG),]
+resultados_gse137765_endometrial$significativo <- "No significativo"
 
-gpl <- gpl[gpl$ID %in% rownames(DEG),]
+resultados_gse137765_endometrial$significativo[
+  resultados_gse137765_endometrial$adj.P.Val < 0.05 &
+    resultados_gse137765_endometrial$logFC >= 1
+] <- "Sobreexpresado"
 
-rownames(gpl) <- gpl$ID #para que el nombre de la fila no sea un numero, que sea el ID
+resultados_gse137765_endometrial$significativo[
+  resultados_gse137765_endometrial$adj.P.Val < 0.05 &
+    resultados_gse137765_endometrial$logFC <= -1
+] <- "Subexpresado"
 
-merge(DEG,gpl,by=0)
+ggplot(resultados_gse137765_endometrial, aes(
+  x = logFC,
+  y = -log10(adj.P.Val),
+  color = significativo
+)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  geom_vline(xintercept = c(-1, 1),
+             linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  labs(
+    title = "Volcano Plot",
+    x = "log2 Fold Change",
+    y = "-log10(FDR)",
+    color = "Clasificación"
+  ) +
+  theme_minimal()
