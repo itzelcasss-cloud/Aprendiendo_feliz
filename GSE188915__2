@@ -1,0 +1,118 @@
+#Resultados de Tesis de Montserrat Ramirez 
+
+library(limma)
+library(GEOquery)
+library(tidyverse)
+BiocManager::install("edgeR")
+library(edgeR)
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("DESeq2")
+library(DESeq2)
+
+#GSE188915 - Diferencias de tejido endometrial con y sin tratamiento hormonal
+gse_188915 <- getGEO("GSE188915", GSEMatrix = TRUE)
+pheno_gse_188915 <- pData(gse_188915[[1]])
+conteo_gse_188915 <- exprs((gse_188915[[1]]))
+
+#esta incompleto el conteo
+getGEOSuppFiles("GSE188915")
+list.files("GSE188915")
+conteo_gse_188915 <- read.csv(
+  "GSE188915/GSE188915_Organoid_TMM_Normalised_MTremoved_CPM_Counts_ENSEMBL.csv.gz",
+  row.names = 1,
+  check.names = FALSE
+)
+dim(conteo_gse_188915)
+summary(as.vector(as.matrix(conteo_gse_188915)))
+dim(conteo_gse_188915)
+colnames(conteo_gse_188915)
+pheno_gse_188915$title
+data.frame(
+  sample = pheno_gse_188915$title,
+  tratamiento = pheno_gse_188915$`hormonal medication:ch1`
+)
+colnames(conteo_gse_188915)[
+  colnames(conteo_gse_188915) == "Sanple_4"
+] <- "Sample_4"
+conteo_gse_188915 <- conteo_gse_188915[, c(
+  "Sample_1",
+  "Sample_2",
+  "Sample_3",
+  "Sample_4",
+  "Sample_5",
+  "Sample_6",
+  "Sample_7"
+)]
+data.frame(
+  sample = pheno_gse_188915$title,
+  treatment = pheno_gse_188915$`hormonal medication:ch1`
+)
+
+raw_gse188915 <- read.csv(
+  "GSE188915/GSE188915_Organoid_Raw_Gene_Counts_ENSEMBL.csv.gz",
+  row.names = 1,
+  check.names = FALSE
+)
+colnames(raw_gse188915)[
+  colnames(raw_gse188915) == "Sanple_4"
+] <- "Sample_4"
+raw_gse188915 <- raw_gse188915[, c(
+  "Sample_1",
+  "Sample_2",
+  "Sample_3",
+  "Sample_4",
+  "Sample_5",
+  "Sample_6",
+  "Sample_7"
+)]
+colnames(raw_gse188915)
+grupo_gse188915 <- factor(
+  c(
+    "None",
+    "None",
+    "OCP",
+    "Mirena",
+    "OCP",
+    "None",
+    "None"
+  ),
+  levels = c("None", "Mirena", "OCP")
+)
+table(grupo_gse188915)
+design_gse188915 <- model.matrix(
+  ~ 0 + grupo_gse188915
+)
+colnames(design_gse188915) <- c(
+  "None",
+  "Mirena",
+  "OCP"
+)
+ncol(raw_gse188915) == nrow(design_gse188915)
+
+#listo
+view(pheno_gse_188915)
+
+
+md_pheno_gse_188915 <- pheno_gse_188915 |>
+  select( c(geo_accession,
+            'hormonal medication:ch1',
+            source_name_ch1)) 
+
+view(md_pheno_gse_188915)
+
+md_pheno_gse_188915 <- md_pheno_gse_188915 |> 
+  mutate(`hormonal medication:ch1` = factor(`hormonal medication:ch1`))
+
+md_pheno_gse_188915$`hormonal medication:ch1` <- relevel(md_pheno_gse_188915$`hormonal medication:ch1`, ref = "None")
+
+design_gse188915 <- model.matrix(~ 0 + md_pheno_gse_188915$`hormonal medication:ch1`)
+colnames(design_gse188915) <- c(
+  "Mirena",
+  "None",
+  "OCP"
+)
+
+conteo_gse_188915 <- conteo_gse_188915[, md_pheno_gse_188915$geo_accession]
+all(colnames(conteo_gse_137765) == md_pheno_gse137765$geo_accession)
