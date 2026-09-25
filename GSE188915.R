@@ -1,5 +1,6 @@
 #Resultados de Tesis de Montserrat Ramirez 
 
+library(limma)
 library(GEOquery)
 library(tidyverse)
 BiocManager::install("edgeR")
@@ -189,6 +190,20 @@ volcano$category[
 # Eje Y
 volcano$minuslog10p <- -log10(volcano$pvalue)
 
+library(ggrepel)
+volcano$gene_symbol <- sub(".*\\|", "", volcano$gene)
+genes_label <- c(
+  "ROBO1",
+  "LRRN1",
+  "MAP1B",
+  "CCL2",
+  "GDF15",
+  "LDHA",
+  "SCGB2A1",
+  "SGIP1",
+  "CAPN6",
+  "IGFBP1"
+)
 
 ggplot(
   volcano,
@@ -198,7 +213,16 @@ ggplot(
     color = category
   )
 ) +
-  geom_point(size = 1.6, alpha = 0.9) +
+  geom_point(size = 1.5, alpha = 0.8) +
+  
+  geom_text_repel(
+    data = subset(volcano, gene_symbol %in% genes_label),
+    aes(label = gene_symbol),
+    color = "black",
+    size = 3,
+    max.overlaps = Inf
+  ) +
+  
   scale_color_manual(
     values = c(
       "Down regulated" = "#F8766D",
@@ -206,11 +230,13 @@ ggplot(
       "Up regulated" = "#619CFF"
     )
   ) +
+  
   labs(
     x = "log2FoldChange",
     y = "-log(pvalue)",
     color = "category"
   ) +
+  
   theme_gray()
 
 res_df <- as.data.frame(res)
@@ -228,7 +254,6 @@ head(
   )],
   20
 )
-
 
 
 colData(dds)
