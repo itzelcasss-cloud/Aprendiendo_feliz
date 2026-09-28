@@ -1,0 +1,153 @@
+#Resultados de Tesis de Montserrat Ramirez 
+
+library(limma)
+library(GEOquery)
+library(tidyverse)
+library(DESeq2)
+library(apeglm)
+
+#GSE142058 - Diferencias en la expresión génica en sujetos bajo ningún tratamiento vs. tratamiento con Levonorgestrel con y sin presencia de infecciones.
+gse_142058 <- getGEO("GSE142058", GSEMatrix = TRUE)
+pheno_gse_142058 <- pData(gse_142058[[1]])
+conteo_gse_142058 <- exprs((gse_142058[[1]]))
+getGEOSuppFiles("GSE142058")
+list.files("GSE142058", recursive = TRUE)
+  
+conteo_gse_142058 <- read.delim(
+    "GSE142058/GSE142058_non-normalized_data.txt.gz",
+    header = TRUE,
+    check.names = FALSE
+  )
+  
+
+meta_b1 <- read.csv(
+    "GSE142058/GSE142058_Batch1_metadata.csv.gz",
+    check.names = FALSE
+  )
+  
+meta_b2 <- read.csv(
+    "GSE142058/GSE142058_Batch2_metadata.csv.gz",
+    check.names = FALSE
+  )
+
+meta_b1$Batch <- "1"
+meta_b2$Batch <- "2"
+
+meta_total <- rbind(meta_b1, meta_b2)
+  
+pheno_gse_142058$MicroarrayId <- meta_total$MicroarrayId[
+  match(
+    paste(
+      pheno_gse_142058$`studyid:ch1`,
+      pheno_gse_142058$`date:ch1`,
+      pheno_gse_142058$`batch:ch1`
+    ),
+    paste(
+      meta_total$StudyId,
+      meta_total$Date,
+      meta_total$Batch
+    )
+  )
+]
+md_pheno_gse_142058$MicroarrayId <-
+  pheno_gse_142058$MicroarrayId[
+    match(
+      md_pheno_gse_142058$geo_accession,
+      pheno_gse_142058$geo_accession
+    )
+  ]
+
+view(pheno_gse_142058)
+view(conteo_gse_142058)
+view(md_pheno_gse_142058)
+
+
+md_pheno_gse_142058 <- pheno_gse_142058 |>
+  select( c(geo_accession,
+            'hsv2:ch1',
+            "visit:ch1",
+            MicroarrayId) )|> 
+  dplyr::rename("infection" = "hsv2:ch1") |> 
+    dplyr::rename("fase" = "visit:ch1")
+
+md_pheno_gse_142058$ring <- ifelse(
+  md_pheno_gse_142058$fase == "Ring",
+  "ring",
+  "no ring"
+)
+
+view(md_pheno_gse_142058)
+view(conteo_gse_142058)
+
+head(md_pheno_gse_142058)
+setdiff(
+  md_pheno_gse_142058$MicroarrayId,
+  colnames(conteo_gse_142058)
+)
+
+#con y sin tratamiento "Ring"
+md_pheno_gse_142058 <- md_pheno_gse_142058 |> 
+  mutate(ring = factor(ring))
+md_pheno_gse_142058$ring <- relevel(md_pheno_gse_142058$ring, ref = "ring")
+
+design_gse142058 <- model.matrix(~ 0 + md_pheno_gse_142058$ring)
+
+conteo_gse_142058 <- conteo_gse_142058[
+  , md_pheno_gse_142058$MicroarrayId,
+  drop = FALSE
+]
+all(colnames(conteo_gse_142058) == md_pheno_gse_142058$MicroarrayId)
+
+colnames(design_gse142058) <- make.names(colnames(design_gse142058))
+
+fit_gse142058 <- lmFit(conteo_gse_142058, design_gse142058)
+
+contraste_gse142058 <- makeContrasts(
+  md_pheno_gse_142058.ringring - md_pheno_gse_142058.ringno.ring,
+  levels = design_gse142058)
+
+fit2_gse142058<- contrasts.fit(fit_gse142058, contraste_gse142058)
+fit2_gse142058 <- eBayes(fit2_gse142058)
+
+#resultados 
+resultados_gse142058 <- topTable(
+  fit2_gse142058,
+  coef = 1,
+  number = Inf,
+  adjust.method = "BH"
+)
+
+#genes diferencilmente expresados 
+deg_gse142058 <- resultados_gse142058[
+  resultados_gse142058$adj.P.Val <0.05 &
+    abs(resultados_gse142058$logFC) >=2.5,]
+
+resultados_gse142058$significativo <- "No significativo"
+
+resultados_gse142058$significativo[
+  resultados_gse142058$adj.P.Val < 0.05 &
+    resultados_gse142058$logFC >= 1
+] <- "Sobreexpresado"
+
+resultados_gse142058$significativo[
+  resultados_gse142058$adj.P.Val < 0.05 &
+    resultados_gse142058$logFC <= -1
+] <- "Subexpresado"
+
+ggplot(resultados_gse142058, aes(
+  x = logFC,
+  y = -log10(adj.P.Val),
+  color = significativo
+)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  geom_vline(xintercept = c(-1, 1),
+             linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  labs(
+    title = "Volcano Plot",
+    x = "log2 Fold Change",
+    y = "-log10(FDR)",
+    color = "Clasificación"
+  ) +
+  theme_minimal()
